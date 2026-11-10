@@ -200,8 +200,9 @@ class Game {
       const pRight=Math.max(prevX,px)+PLAYER_HALF;
       const sLeft=s.x-s.halfW, sRight=s.x+s.halfW;
       if(pLeft<sRight && pRight>sLeft){
-        const onPipeTop=(this.onGround||this.velY<=0)&&this.player.y>=s.top-0.35;
-        if(this.player.y<s.top-0.35&&!onPipeTop){ this.die('パイプにぶつかった'); return; }
+        const grace=s.stair?1.2:0.35; // 階段は1段分の猶予
+        const onTop=(this.onGround||this.velY<=0)&&this.player.y>=s.top-grace;
+        if(this.player.y<s.top-grace&&!onTop){ this.die('パイプにぶつかった'); return; }
       }
     }
     // 着地

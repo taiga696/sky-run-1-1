@@ -570,10 +570,13 @@
         const sRight = s.x + s.halfW;
         // X軸で重なっている（AABBの水平判定）
         if(pLeft < sRight && pRight > sLeft){
-          // パイプの上に立っている／着地直前（接地中 or 足元が上面付近）なら側面衝突しない
-          const onPipeTop = (onGround || velY<=0) && player.position.y >= s.top - 0.35;
-          // 足元が上面より下（0.35以上下）＝パイプの側面にいる → 死亡
-          if(player.position.y < s.top-0.35 && !onPipeTop){
+          // 階段は1段分（1.2m）の猶予を設ける＝ジャンプで登る途中で死ににくい
+          // パイプは0.35m（厳しい）
+          const grace = s.stair ? 1.2 : 0.35;
+          // 上面に立っている／着地直前（接地中 or 足元が上面付近）なら側面衝突しない
+          const onTop = (onGround || velY<=0) && player.position.y >= s.top - grace;
+          // 足元が上面より下（grace以上下）＝側面にいる → 死亡
+          if(player.position.y < s.top-grace && !onTop){
             die('Bumped into a pipe…'); break;
           }
         }
