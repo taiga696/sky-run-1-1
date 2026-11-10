@@ -145,14 +145,18 @@ class Game {
       if(inGap(cx)) continue;
       for(let k=0;k<3;k++) this.items.push({type:'coin',x:cx+k*1.5,y:2.2+Math.sin(k/2*Math.PI)*1.4,alive:true});
     }
+    // 大階段（低い段は歩いて登れる、高い段はdeadly）
+    const stairBase=this.levelLen-26;
+    for(let k=0;k<5;k++){ this.solids.push({x:stairBase+k*3,halfW:1,top:1.2+k*1.2,deadly:k>=2,stair:true}); }
   }
 
-  supportAt(px, refY){
+  supportAt(px, refY, includeDeadly){
     let best=-1e9;
     const onHole=this.groundGaps.some(g=>px>g[0]&&px<g[1]);
     if(!onHole && 0<=refY+0.25) best=0;
     for(const s of this.solids){
       if(s.top===0) continue;
+      if(s.deadly && !includeDeadly) continue; // deadlyソリッドは段差昇降では無視
       if(Math.abs(s.x-px)<s.halfW+PLAYER_HALF){ if(s.top<=refY+0.25&&s.top>best) best=s.top; }
     }
     return best;
@@ -179,7 +183,7 @@ class Game {
       const wasOnHole=this.groundGaps.some(g=>prevX>g[0]&&prevX<g[1]);
       const nowOnHole=this.groundGaps.some(g=>px>g[0]&&px<g[1]);
       if(!wasOnHole && !nowOnHole){
-        const sup=this.supportAt(px, prevY+1.3);
+        const sup=this.supportAt(px, prevY+1.3, false);
         if(sup>-1e8 && sup-prevY<=1.3 && sup-prevY>=-1.4){ this.player.y=sup; this.velY=0; }
         else if(prevY<0.5){ this.player.y=0; this.velY=0; }
         else { this.onGround=false; this.coyoteTimer=COYOTE; this.velY=0; }
@@ -203,7 +207,7 @@ class Game {
     // 着地
     if(!this.onGround&&this.velY<=0){
       const onHole=this.groundGaps.some(g=>px>g[0]&&px<g[1]);
-      const sup=this.supportAt(px, prevY);
+      const sup=this.supportAt(px, prevY, true);
       if(!onHole&&this.player.y<=0.02){ this.player.y=0; this.velY=0; this.onGround=true; this.airJumps=2; }
       else if(sup>-1e8&&this.player.y<=sup+0.02){ this.player.y=sup; this.velY=0; this.onGround=true; this.airJumps=2; }
     }

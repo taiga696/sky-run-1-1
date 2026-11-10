@@ -304,8 +304,9 @@
     }
 
     // --- 大階段（ゴール直前） ---
-    const stairBase = levelLen-22;
-    for(let k=0;k<5;k++) stair(stairBase+k*2, 1.2+k*1.2);
+    // 低い段（1〜2段目）は歩いて登れる（deadly=false）。高い段（3段目以降）は横からぶつかると死ぬ（deadly=true）。
+    const stairBase = levelLen-26;
+    for(let k=0;k<5;k++) stair(stairBase+k*3, 1.2+k*1.2, k>=2);
 
     // --- 旗ポール＋城（大きく目立たせる） ---
     const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,14,12), mat.pole);
@@ -346,10 +347,11 @@
     p.position.set(x,h/2,0); p.castShadow=true; p.receiveShadow=true;
     addSolid(p, x, 1.05, h, true);
   }
-  function stair(x,top){
+  function stair(x,top,deadly){
     const s=new THREE.Mesh(new THREE.BoxGeometry(2,top,6), mat.stair);
     s.position.set(x,top/2,0); s.castShadow=true; s.receiveShadow=true;
-    addSolid(s, x, 1, top, false);
+    // deadly=true: 横からぶつかると死亡（パイプと同じ）。上から着地すれば乗れる。
+    addSolid(s, x, 1, top, !!deadly);
   }
 
   // ================= プレイヤー =================
@@ -399,13 +401,16 @@
 
   // ================= 支持面の高さ =================
   // 地面（top=0）は穴リストで判定。ブロック・パイプ・階段はメッシュ位置で判定（上面に乗れる）。
-  function supportAt(px, refY){
+  // includeDeadly=false の場合、パイプ・階段（deadly）は支持面に含めない＝歩いて段差昇降で乗れない（横からぶつかると死ぬ）。
+  // 着地判定では includeDeadly=true で呼ぶ＝上から降りてパイプ・階段の上に着地することはできる。
+  function supportAt(px, refY, includeDeadly){
     let best=-1e9;
     const onHole = groundGaps.some(g=> px>g[0] && px<g[1]);
     // 地面(top=0)は、そのxが穴でない限り常に支持面候補になる
     if(!onHole && 0 <= refY+0.25) best=0;
     for(const s of solids){
       if(s.top===0) continue;
+      if(s.deadly && !includeDeadly) continue; // 死亡ソリッドは段差昇降では無視
       // 判定幅をプレイヤー半幅いっぱいに（ブロックの端で足場を見失わない）
       if(Math.abs(s.x-px) < s.halfW+PLAYER_HALF){
         if(s.top <= refY+0.25 && s.top > best) best=s.top;
@@ -535,7 +540,7 @@
         const nowOnHole = groundGaps.some(g=> px>g[0] && px<g[1]);
         // 移動前も移動後も穴でない → 地面に留まる（勝手に落ちない）
         if(!wasOnHole && !nowOnHole){
-          const sup=supportAt(px, prevY+1.3);
+          const sup=supportAt(px, prevY+1.3, false); // deadlyソリッドは段差昇降しない
           if(sup>-1e8 && sup-prevY<=1.3 && sup-prevY>=-1.4){
             player.position.y=sup; velY=0;
           } else if(prevY < 0.5){
@@ -574,10 +579,10 @@
         }
       }
 
-      // 着地判定（上から降りる＝パイプの上にも乗れる）
+      // 着地判定（上から降りる＝パイプ・階段の上にも乗れる）
       if(running && !onGround && velY<=0){
         const onHole = groundGaps.some(g=> px>g[0] && px<g[1]);
-        const sup=supportAt(px, prevY);
+        const sup=supportAt(px, prevY, true); // 着地時はdeadlyソリッドの上にも乗れる
         // 穴でない場所で地面レベルまで落ちたら必ず着地
         if(!onHole && player.position.y<=0.02){
           player.position.y=0;
