@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#5c94fc">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sky Run">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%235c94fc'/%3E%3Crect x='156' y='150' width='200' height='60' rx='18' fill='%23e52521'/%3E%3Crect x='176' y='210' width='160' height='150' rx='20' fill='%23e52521'/%3E%3Crect x='196' y='250' width='120' height='70' rx='14' fill='%23ffcf9e'/%3E%3Crect x='216' y='270' width='24' height='24' rx='6' fill='%231a1a2e'/%3E%3Crect x='272' y='270' width='24' height='24' rx='6' fill='%231a1a2e'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%235c94fc'/%3E%3Crect x='156' y='150' width='200' height='60' rx='18' fill='%23e52521'/%3E%3Crect x='176' y='210' width='160' height='150' rx='20' fill='%23e52521'/%3E%3Crect x='196' y='250' width='120' height='70' rx='14' fill='%23ffcf9e'/%3E%3Crect x='216' y='270' width='24' height='24' rx='6' fill='%231a1a2e'/%3E%3Crect x='272' y='270' width='24' height='24' rx='6' fill='%231a1a2e'/%3E%3C/svg%3E">
+<title>Sky Run 1-1 — Horizontal 3D Jump</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#5c94fc; font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif; touch-action:none; user-select:none; -webkit-user-select:none; }
+  #game { position:fixed; inset:0; }
+  #hud { position:fixed; top:0; left:0; right:0; padding:14px 18px; display:flex; gap:14px; pointer-events:none; color:#fff; font-weight:700; text-shadow:0 2px 0 rgba(0,0,0,.35); font-size:18px; z-index:10; }
+  #hud .box { background:rgba(0,0,0,.28); padding:6px 12px; border-radius:10px; }
+  #overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:20; background:rgba(0,0,0,.45); backdrop-filter:blur(4px); transition:opacity .3s; }
+  .panel { text-align:center; color:#fff; padding:34px 44px; background:rgba(20,25,45,.85); border-radius:22px; max-width:90vw; box-shadow:0 12px 40px rgba(0,0,0,.4); }
+  .panel h1 { font-size:32px; margin-bottom:12px; letter-spacing:1px; }
+  .panel p { font-size:15px; line-height:1.75; opacity:.92; margin-bottom:6px; }
+  .panel .btn { display:inline-block; margin-top:22px; padding:15px 40px; font-size:18px; font-weight:700; color:#fff; background:#e52521; border:none; border-radius:999px; cursor:pointer; box-shadow:0 5px 0 #a01814; transition:transform .05s; }
+  .panel .btn:active { transform:translateY(3px); box-shadow:0 2px 0 #a01814; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud">
+  <div class="box">1-<span id="level">1</span></div>
+  <div class="box">SCORE <span id="score">0</span></div>
+  <div class="box">COIN <span id="coins">0</span></div>
+  <div class="box">GOAL <span id="dist">0</span>m</div>
+</div>
+
+<div id="overlay">
+  <div class="panel" id="panel-start">
+    <h1>SKY RUN 1-1</h1>
+    <p>Horizontal-scrolling 3D<br>Mario 1-1 style jump action</p>
+    <p style="opacity:.75;font-size:13px;margin-top:14px;">Hold = jump higher / Tap = jump lower<br>Stomp Goombas from above</p>
+    <button class="btn" id="btn-start">START</button>
+  </div>
+  <div class="panel hidden" id="panel-over">
+    <h1 id="over-title">GAME OVER</h1>
+    <p id="over-msg">You fell into a pit…</p>
+    <p style="margin-top:12px;">SCORE <b id="final-score">0</b> / COIN <b id="final-coins">0</b></p>
+    <button class="btn" id="btn-retry">RETRY</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  // ================= 基本セットアップ =================
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x5c94fc);
+  scene.fog = new THREE.Fog(0x5c94fc, 80, 180);
+
+  const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 400);
+  const renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.getElementById('game').appendChild(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.72));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.85);
+  sun.position.set(20, 40, 30);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048,2048);
+  const sc=sun.shadow.camera; sc.near=1; sc.far=120; sc.left=-30; sc.right=30; sc.top=30; sc.bottom=-30;
+  scene.add(sun); scene.add(sun.target);
+
+  // ================= 定数（手触りの核） =================
+  const GRAVITY      = -42;   // 強めの重力＝キビキビした落下
+  const JUMP_V       = 18.4;  // 初速（元15.0の√1.5倍＝ジャンプ高さ1.5倍）
+  const JUMP_CUT     = 0.42;  // 離した時の上昇カット率（可変ジャンプ）
+  const COYOTE       = 0.11;  // コヨーテタイム秒
+  const BUFFER       = 0.12;  // ジャンプバッファ秒
+  const PLAYER_HALF  = 0.35;
+
+  // ================= マテリアル =================
+  const mat = {
+    ground:  new THREE.MeshLambertMaterial({ color:0x6ab04c }),
+    dirt:    new THREE.MeshLambertMaterial({ color:0x8b5a2b }),
+    brick:   new THREE.MeshLambertMaterial({ color:0xc0562b }),
+    question:new THREE.MeshLambertMaterial({ color:0xf5b301 }),
+    pipe:    new THREE.MeshLambertMaterial({ color:0x1e9e3e }),
+    goomba:  new THREE.MeshLambertMaterial({ color:0x8b4a2b }),
+    coin:    new THREE.MeshLambertMaterial({ color:0xffd23f, emissive:0x5c4400 }),
+    player:  new THREE.MeshLambertMaterial({ color:0xe52521 }),
+    skin:    new THREE.MeshLambertMaterial({ color:0xffcf9e }),
+    flag:    new THREE.MeshLambertMaterial({ color:0xffffff }),
+    pole:    new THREE.MeshLambertMaterial({ color:0xdddddd }),
+    cloud:   new THREE.MeshLambertMaterial({ color:0xffffff }),
+    castle:  new THREE.MeshLambertMaterial({ color:0xb0562b }),
+    stair:   new THREE.MeshLambertMaterial({ color:0xc9782b }),
+    bush:    new THREE.MeshLambertMaterial({ color:0x3a9d3a }),
+    hill:    new THREE.MeshLambertMaterial({ color:0x4caf50 }),
+    pit:     new THREE.MeshBasicMaterial({ color:0x5c94fc }),
+  };
+
+  // ================= 効果音（Web Audio 合成・外部ファイル不要） =================
+  let actx=null;
+  function audio(){ if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return actx; }
+  function tone(freq, dur, type, vol, slideTo){
+    const a=audio(); if(!a) return;
+    const o=a.createOscillator(), g=a.createGain();
+    o.type=type||'square'; o.frequency.value=freq;
+    if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, a.currentTime+dur);
+    g.gain.value=vol||0.15;
+    g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime+dur);
+    o.connect(g); g.connect(a.destination);
+    o.start(); o.stop(a.currentTime+dur);
+  }
+  const sfx = {
+    jump:  ()=> tone(320, 0.16, 'square', 0.14, 620),
+    coin:  ()=>{ tone(988,0.08,'square',0.12); setTimeout(()=>tone(1319,0.14,'square',0.12),70); },
+    stomp: ()=> tone(220, 0.14, 'sawtooth', 0.18, 90),
+    bump:  ()=> tone(140, 0.1, 'square', 0.14, 80),
+    break: ()=>{ tone(180,0.12,'sawtooth',0.16,60); tone(90,0.18,'square',0.12,40); },
+    die:   ()=>{ tone(400,0.15,'square',0.15,180); setTimeout(()=>tone(200,0.3,'square',0.15,80),140); },
+    clear: ()=>{ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,0.18,'square',0.14),i*130)); },
+  };
+
+  // ブロック破壊の破片
+  function spawnDebris(x,y){
+    for(let i=0;i<4;i++){
+      const d=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), mat.brick);
+      d.position.set(x+(i%2?0.4:-0.4), y+(i<2?0.4:-0.4), 0);
+      scene.add(d);
+      debris.push({mesh:d, vx:(i%2?1:-1)*(2+Math.random()*2), vy:6+Math.random()*3, vz:(Math.random()-0.5)*3});
+    }
+  }
+  function updateDebris(dt){
+    for(let i=debris.length-1;i>=0;i--){
+      const p=debris[i];
+      p.vy += GRAVITY*dt;
+      p.mesh.position.x += p.vx*dt;
+      p.mesh.position.y += p.vy*dt;
+      p.mesh.position.z += p.vz*dt;
+      p.mesh.rotation.x += dt*8; p.mesh.rotation.y += dt*6;
+      if(p.mesh.position.y < -3){ scene.remove(p.mesh); debris.splice(i,1); }
+    }
+  }
+
+  // ================= 状態 =================
+  let player, pBody, pHead, pCap;
+  let velY=0, onGround=false;
+  let coyoteTimer=0, bufferTimer=0, holding=false;
+  let airJumps=0;   // 空中で使える追加ジャンプ回数（3段ジャンプ＝着地で3回まで）
+  let score=0, coins=0, flagReached=false, running=false;
+  let solids=[], items=[], decor=[], debris=[];
+  let groundGaps=[];   // 穴の区間リスト [start,end]（地面の正確な落下判定に使用）
+  let camShake=0;
+  let level=1;          // 現在のステージ（クリアで+1）
+  let levelLen=210;     // ステージ長（レベルで増える）
+  let FLAG_X=208;       // ゴール位置（生成時に更新）
+  let runSpeed=9.5;     // 前進速度（レベルで増える）
+
+  function addSolid(mesh,x,halfW,top,deadly){ scene.add(mesh); solids.push({mesh,x,halfW,top,deadly:!!deadly}); }
+  function addDecor(mesh){ scene.add(mesh); decor.push(mesh); }
+
+  // ================= レベル生成（プロシージャル＝毎回ランダム） =================
+  // 難易度は level に応じて上昇。クリアで level+1
+  function buildLevel(){
+    // --- 難易度パラメータ（レベルで増強） ---
+    const lv = level;
+    runSpeed = 9.5 + Math.min(6, (lv-1)*0.7); // 前進速度が増える（上限あり）
+    levelLen = 70;                            // 1面 = 70m固定（GOAL）
+    FLAG_X = levelLen;
+    const maxGapW = 3 + Math.min(3, lv*0.4); // 穴の最大幅
+    const goombaCount = 2 + Math.min(6, lv); // クリボー数（70mに合わせて抑制）
+    const pipeCount = lv < 3 ? 1 : 2;   // パイプ数（1面1〜2本に制限＝重なり防止）
+    const gapCount = 1 + Math.min(3, Math.floor(lv/2));    // 穴の数
+
+    // --- 穴の位置をランダム生成（ゴール手前は空けない・重なり防止） ---
+    groundGaps=[];
+    const safeStart=20, safeEnd=levelLen-20;
+    for(let i=0;i<gapCount;i++){
+      for(let t=0;t<20;t++){
+        const gx = safeStart + Math.random()*(safeEnd-safeStart);
+        const gw = 2.5 + Math.random()*maxGapW;
+        // 既存の穴と重ならない（間に十分な地面を残す）
+        if(groundGaps.every(g=> gx > g[1]+6 || gx+gw < g[0]-6)){
+          groundGaps.push([gx, gx+gw]); break;
+        }
+      }
+    }
+    groundGaps.sort((a,b)=>a[0]-b[0]);
+    // 穴の上判定：プレイヤー中心が穴の区間内（端のマージンなし＝メッシュと完全一致）
+    function inGap(x){ return groundGaps.some(g=> x>g[0] && x<g[1]); }
+
+    // --- 地面（穴の「間」だけを1枚ずつ生成。メッシュ範囲＝当たり判定範囲で完全一致） ---
+    // ※ 穴区間そのものには地面を作らない。これにより「見た目は地面なのに穴で落ちる」を完全に排除。
+    const x0=-10, x1=levelLen+60;
+    const buildGroundSeg=(a,b)=>{
+      if(b-a>0.5){
+        const len=b-a, cx=(a+b)/2;
+        const g=new THREE.Mesh(new THREE.BoxGeometry(len,2,8), mat.ground);
+        g.position.set(cx,-1,0); g.receiveShadow=true;
+        addSolid(g, cx, len/2, 0, false);
+        const d=new THREE.Mesh(new THREE.BoxGeometry(len,10,8), mat.dirt);
+        d.position.set(cx,-7,0); addDecor(d);
+      }
+    };
+    {
+      let segStart=x0;
+      for(const g of groundGaps){
+        buildGroundSeg(segStart, g[0]); // 穴の直前まで地面
+        // 穴の部分に空（青）を描く。地面の緑の断面が見えないよう、上端を地面レベルまで上げ、幅も広げる
+        const pitW=g[1]-g[0];
+        // 上端が地面の上面(y=0)より少し上に来るように＝地面の緑の断面を完全に隠す
+        const pit=new THREE.Mesh(new THREE.BoxGeometry(pitW, 24, 12), mat.pit);
+        pit.position.set((g[0]+g[1])/2, -11.9, 0); addDecor(pit);
+        segStart=g[1];                  // 穴区間をスキップ
+      }
+      buildGroundSeg(segStart, x1);     // 最後の地面
+    }
+
+    // --- 背景 ---
+    for(let x=-5;x<levelLen+80;x+=22){
+      const h=new THREE.Mesh(new THREE.SphereGeometry(4+Math.random()*2,12,10), mat.hill);
+      h.position.set(x,-1.5,-9); h.scale.y=0.6; addDecor(h);
+      const b=new THREE.Mesh(new THREE.BoxGeometry(3,1.2,1.5), mat.bush);
+      b.position.set(x+8,0.4,-3.5); addDecor(b);
+    }
+    for(let i=0;i<24;i++){
+      const c=new THREE.Mesh(new THREE.BoxGeometry(4,1.2,2.5), mat.cloud);
+      c.position.set(Math.random()*(levelLen+80)-10, 9+Math.random()*7, -14-Math.random()*8);
+      addDecor(c);
+    }
+
+    // --- パイプ（ランダム配置・穴と重ならない） ---
+    const occupied=[]; // 配置済みx帯を記録（重なり防止）
+    // 着地に必要な余白（パイプの両側にこれだけの地面を保証＝理不尽死を防ぐ）
+    const LAND=2.5;
+    // パイプ全体（幅w）＋両側LANDの着地スペースが、すべて地面（穴でない）であること
+    function free(x,w){
+      if(occupied.some(o=> x<o[1]+8 && x+w>o[0]-8)) return false;
+      // パイプ左端から左にLAND、右端から右にLAND の区間に穴が無いこと
+      const l=x-w/2, r=x+w/2;
+      for(const g of groundGaps){
+        // 穴が [l-LAND, r+LAND] の範囲と重なったら不可
+        if(l-LAND < g[1] && r+LAND > g[0]) return false;
+      }
+      return true;
+    }
+    function occupy(x,w){ occupied.push([x-w/2,x+w/2]); }
+
+    for(let i=0;i<pipeCount;i++){
+      let placed=false;
+      for(let t=0;t<30;t++){
+        const px = 18 + Math.random()*(levelLen-38);
+        if(free(px,2)){
+          pipe(px, 2.0 + Math.random()*0.6);
+          occupy(px,2); placed=true; break;
+        }
+      }
+      // 配置失敗時：安全な固定位置にフォールバック（パイプが無くなるのを防ぐ）
+      if(!placed){
+        const fx = 30 + i*20;
+        if(free(fx,2)){
+          pipe(fx, 2.2); occupy(fx,2);
+        }
+      }
+    }
+
+    // --- 浮遊ブロック列（?とレンガを混ぜる） ---
+    const blockRows = 2 + Math.floor(lv/2);
+    for(let i=0;i<blockRows;i++){
+      for(let t=0;t<20;t++){
+        const bx = 14 + Math.random()*(levelLen-34);
+        if(free(bx,8)){
+          const n = 3+Math.floor(Math.random()*3);
+          for(let k=0;k<n;k++){
+            const kind = Math.random()<0.4 ? 'q':'brick';
+            floatBlock(bx+k*1.6, 3.2, kind);
+          }
+          // 上にコイン
+          for(let k=0;k<n;k++) if(Math.random()<0.6) coin(bx+k*1.6, 4.6);
+          occupy(bx, n*1.6); break;
+        }
+      }
+    }
+
+    // --- クリボー（ランダム・穴とパイプを避ける） ---
+    for(let i=0;i<goombaCount;i++){
+      for(let t=0;t<20;t++){
+        const gx = 14 + Math.random()*(levelLen-30);
+        if(free(gx,3)){ goomba(gx); occupy(gx,3); break; }
+      }
+    }
+
+    // --- コインの弧（空中） ---
+    const coinArcs = 2 + Math.floor(lv/2);
+    for(let i=0;i<coinArcs;i++){
+      const cx = 18 + Math.random()*(levelLen-34);
+      if(inGap(cx)) continue;
+      for(let k=0;k<3;k++) coin(cx+k*1.5, 2.2+Math.sin(k/2*Math.PI)*1.4);
+    }
+
+    // --- 大階段（ゴール直前） ---
+    const stairBase = levelLen-22;
+    for(let k=0;k<5;k++) stair(stairBase+k*2, 1.2+k*1.2);
+
+    // --- 旗ポール＋城（大きく目立たせる） ---
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,14,12), mat.pole);
+    pole.position.set(FLAG_X,7,0); addDecor(pole);
+    const flag=new THREE.Mesh(new THREE.BoxGeometry(0.15,2.2,3.6), mat.flag);
+    flag.position.set(FLAG_X,12,2); addDecor(flag);
+    // ゴール地点に地面を確実に敷く（穴で落ちない）
+    const goalGround=new THREE.Mesh(new THREE.BoxGeometry(30,2,8), mat.ground);
+    goalGround.position.set(FLAG_X+5,-1,0); goalGround.receiveShadow=true;
+    addSolid(goalGround, FLAG_X+5, 15, 0, false);
+    const castle=new THREE.Group();
+    const base=new THREE.Mesh(new THREE.BoxGeometry(9,6,7), mat.castle); base.position.y=3;
+    const tower=new THREE.Mesh(new THREE.BoxGeometry(3.5,3.5,3.5), mat.castle); tower.position.y=7.5;
+    castle.add(base); castle.add(tower); castle.position.set(FLAG_X+14,0,0); addDecor(castle);
+  }
+
+  function floatBlock(x,y,kind){
+    const b=new THREE.Mesh(new THREE.BoxGeometry(1.6,1.6,1.6), kind==='q'?mat.question:mat.brick);
+    b.position.set(x,y,0); b.castShadow=true; scene.add(b);
+    items.push({mesh:b,type:kind==='q'?'qblock':'brick',used:false,x,y});
+    // 上に乗れるよう当たり判定にも登録（上面 = y+0.8）
+    solids.push({mesh:b, x, halfW:0.8, top:y+0.8, deadly:false});
+  }
+  function coin(x,y){
+    const c=new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.45,0.12,16), mat.coin);
+    c.rotation.z=Math.PI/2; c.position.set(x,y,0); scene.add(c);
+    items.push({mesh:c,type:'coin',alive:true,x,y});
+  }
+  function goomba(x){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(new THREE.BoxGeometry(1.3,1.0,1.1), mat.goomba); body.position.y=0.5; body.castShadow=true;
+    const head=new THREE.Mesh(new THREE.BoxGeometry(0.95,0.45,0.95), mat.skin); head.position.y=1.2; head.castShadow=true;
+    g.add(body); g.add(head); g.position.set(x,0,0); scene.add(g);
+    items.push({mesh:g,type:'goomba',alive:true,x,dir:-1});
+  }
+  function pipe(x,h){
+    const p=new THREE.Mesh(new THREE.CylinderGeometry(1.05,1.05,h,16), mat.pipe);
+    p.position.set(x,h/2,0); p.castShadow=true; p.receiveShadow=true;
+    addSolid(p, x, 1.05, h, true);
+  }
+  function stair(x,top){
+    const s=new THREE.Mesh(new THREE.BoxGeometry(2,top,6), mat.stair);
+    s.position.set(x,top/2,0); s.castShadow=true; s.receiveShadow=true;
+    addSolid(s, x, 1, top, false);
+  }
+
+  // ================= プレイヤー =================
+  function buildPlayer(){
+    player=new THREE.Group();
+    const S = 0.7;   // プレイヤーサイズ（小さめ）
+    pBody=new THREE.Mesh(new THREE.BoxGeometry(0.95*S,1.0*S,0.85*S), mat.player); pBody.position.y=0.5*S; pBody.castShadow=true;
+    pHead=new THREE.Mesh(new THREE.BoxGeometry(0.75*S,0.55*S,0.75*S), mat.skin); pHead.position.y=1.28*S; pHead.castShadow=true;
+    pCap =new THREE.Mesh(new THREE.BoxGeometry(0.85*S,0.24*S,0.85*S), mat.player); pCap.position.y=1.62*S; pCap.castShadow=true;
+    player.add(pBody); player.add(pHead); player.add(pCap);
+    player.position.set(0,0,0);
+    scene.add(player);
+  }
+
+  // スクワッシュ＆ストレッチ（scaleYに合わせて位置も補正）
+  function setSquash(sy){
+    const s = sy;
+    player.scale.set(1/Math.sqrt(s), s, 1/Math.sqrt(s));
+  }
+
+  // ================= 入力（バッファ・コヨーテ・可変ジャンプ） =================
+  function pressJump(){ bufferTimer = BUFFER; holding = true; }
+  function releaseJump(){
+    holding = false;
+    if(velY > 0) velY *= JUMP_CUT;  // 離した瞬間、上昇をカット＝可変ジャンプ
+  }
+  function tryJump(){
+    if(onGround || coyoteTimer > 0){
+      velY = JUMP_V;
+      onGround = false; coyoteTimer = 0; bufferTimer = 0;
+      airJumps = 2;   // 1段目消費後、空中でさらに2回＝計3段
+      setSquash(1.3);
+      sfx.jump();
+    } else if(airJumps > 0){
+      velY = JUMP_V*0.92;   // 空中ジャンプは少し弱め
+      airJumps--;
+      setSquash(1.3);
+      sfx.jump();
+    }
+  }
+  window.addEventListener('keydown', e=>{
+    if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); if(!e.repeat) pressJump(); }
+  });
+  window.addEventListener('keyup', e=>{ if(e.code==='Space'||e.code==='ArrowUp') releaseJump(); });
+  renderer.domElement.addEventListener('pointerdown', e=>{ e.preventDefault(); pressJump(); });
+  window.addEventListener('pointerup', releaseJump);
+
+  // ================= 支持面の高さ =================
+  // 地面（top=0）は穴リストで判定。ブロック・パイプ・階段はメッシュ位置で判定（上面に乗れる）。
+  function supportAt(px, refY){
+    let best=-1e9;
+    const onHole = groundGaps.some(g=> px>g[0] && px<g[1]);
+    // 地面(top=0)は、そのxが穴でない限り常に支持面候補になる
+    if(!onHole && 0 <= refY+0.25) best=0;
+    for(const s of solids){
+      if(s.top===0) continue;
+      // 判定幅をプレイヤー半幅いっぱいに（ブロックの端で足場を見失わない）
+      if(Math.abs(s.x-px) < s.halfW+PLAYER_HALF){
+        if(s.top <= refY+0.25 && s.top > best) best=s.top;
+      }
+    }
+    return best;
+  }
+
+  // ================= アイテム判定 =================
+  function checkItems(){
+    const px=player.position.x, py=player.position.y;
+    for(const o of items){
+      if(o.type==='coin'){
+        if(o.alive && Math.abs(o.x-px)<0.9 && Math.abs(o.y-(py+0.8))<1.2){
+          o.alive=false; o.mesh.visible=false; coins++; sfx.coin(); updateHUD();
+        }
+      } else if(o.type==='goomba'){
+        if(!o.alive) continue;
+        const gx=o.mesh.position.x;
+        // クリボー踏みつけ判定（マリオ式：プレイヤーの足元がクリボーの頭より上なら踏む）
+        if(Math.abs(gx-px)<1.05 && py<2.2 && py>-0.3){
+          // 足元がクリボーの頭(≈1.1)より上、または降下中 → 踏みつけ
+          if(py>0.9 || (velY<0 && py>0.3)){
+            o.alive=false; o.mesh.visible=false;
+            velY = holding ? JUMP_V*0.85 : JUMP_V*0.6;
+            coyoteTimer=0; airJumps=2;
+            score+=100; camShake=0.25; sfx.stomp(); updateHUD();
+          } else { die('Hit by a Goomba…'); return; }
+        }
+      } else { // qblock / brick（下から頭で叩く）
+        if(!o.used && Math.abs(o.x-px)<1.2 && py+1.2>o.y-0.8 && py+1.2<o.y+0.6 && velY>0){
+          if(o.type==='brick'){
+            // レンガ＝破壊（当たり判定も消す）
+            o.used=true; o.mesh.visible=false;
+            const si=solids.findIndex(s=>s.mesh===o.mesh);
+            if(si>=0) solids.splice(si,1);
+            spawnDebris(o.x, o.y);
+            score+=50; camShake=0.2; sfx.break();
+          } else {
+            // ?ブロック＝コイン獲得してレンガ色に
+            o.used=true; o.mesh.material=mat.brick; coins++; score+=50; sfx.bump();
+          }
+          velY = -2; // 頭を打って落下
+          updateHUD();
+        }
+      }
+    }
+    if(py < -8){
+      // 最終安全網：穴の上にいないのに落ちた場合は「地面抜けバグ」なので救済して地面に復帰させる
+      const overHole = groundGaps.some(g=> px>g[0]-0.1 && px<g[1]+0.1);
+      if(overHole){ die('You fell into a pit…'); return; }
+      else { player.position.y=0; velY=0; onGround=true; airJumps=2; }
+    }
+    if(!flagReached && px > FLAG_X-0.5) win();
+  }
+
+  // ================= HUD / 勝敗 =================
+  const $score=document.getElementById('score'), $coins=document.getElementById('coins'), $level=document.getElementById('level');
+  const $dist=document.getElementById('dist');
+  function updateHUD(){
+    $score.textContent=score+coins*10; $coins.textContent=coins; $level.textContent=level;
+    const remain=Math.max(0, Math.round(FLAG_X - player.position.x));
+    $dist.textContent=remain;
+  }
+  const overlay=document.getElementById('overlay'), pStart=document.getElementById('panel-start'), pOver=document.getElementById('panel-over');
+  function endPanel(title,msg,btn){
+    running=false;
+    document.getElementById('over-title').textContent=title;
+    document.getElementById('over-msg').textContent=msg;
+    document.getElementById('btn-retry').textContent=btn||'RETRY';
+    document.getElementById('final-score').textContent=score+coins*10;
+    document.getElementById('final-coins').textContent=coins;
+    pOver.classList.remove('hidden'); pStart.classList.add('hidden');
+    overlay.classList.remove('hidden'); overlay.style.opacity='1';
+  }
+  function die(m){ sfx.die(); endPanel('GAME OVER', m+' (1-'+level+')', 'RETRY'); }
+  function win(){
+    sfx.clear();
+    const cleared=level;
+    level++;                    // レベルアップ
+    score += 500 + cleared*100; // クリアボーナス
+    endPanel('CLEAR! 1-'+cleared,
+      'Next: 1-'+level+' (Speed +'+Math.min(6,(level-1)*0.7).toFixed(1)+' / Enemies +'+(4+level*2)+')',
+      'GO 1-'+level);
+  }
+
+  // ================= リセット =================
+  function reset(){
+    [...solids,...items.map(o=>o.mesh),...decor,...debris.map(d=>d.mesh)].forEach(m=>scene.remove(m));
+    solids=[]; items=[]; decor=[]; debris=[];
+    coins=0; flagReached=false;
+    velY=0; onGround=false; coyoteTimer=0; bufferTimer=0; camShake=0;
+    buildLevel();
+    player.position.set(0,0,0); setSquash(1);
+    updateHUD();
+  }
+  function start(fresh){
+    audio();
+    if(fresh){ level=1; score=0; }   // STARTからはレベル1・スコア0に戻す
+    reset();
+    overlay.style.opacity='0'; setTimeout(()=>overlay.classList.add('hidden'),300); running=true;
+  }
+  document.getElementById('btn-start').addEventListener('click', ()=>start(true));
+  document.getElementById('btn-retry').addEventListener('click', ()=>start(false));
+
+  // ================= メインループ =================
+  let last=performance.now();
+  function animate(now){
+    requestAnimationFrame(animate);
+    let dt=Math.min((now-last)/1000, 0.045); last=now;
+
+    if(running){
+      const prevY=player.position.y;
+      const prevX=player.position.x;
+      // 前進
+      player.position.x += runSpeed*dt;
+      const px=player.position.x;
+
+      // タイマー更新
+      if(coyoteTimer>0) coyoteTimer-=dt;
+      if(bufferTimer>0){ bufferTimer-=dt; if(bufferTimer>0) tryJump(); }
+
+      // 接地時：段差の自動昇降（パイプ上面も足場に含める＝上を歩ける）
+      if(onGround){
+        // 移動経路（prevX〜px）の両端で穴を確認＝境界跨ぎでも正確に判定
+        const wasOnHole = groundGaps.some(g=> prevX>g[0] && prevX<g[1]);
+        const nowOnHole = groundGaps.some(g=> px>g[0] && px<g[1]);
+        // 移動前も移動後も穴でない → 地面に留まる（勝手に落ちない）
+        if(!wasOnHole && !nowOnHole){
+          const sup=supportAt(px, prevY+1.3);
+          if(sup>-1e8 && sup-prevY<=1.3 && sup-prevY>=-1.4){
+            player.position.y=sup; velY=0;
+          } else if(prevY < 0.5){
+            player.position.y=0; velY=0; // 地面レベルに固定
+          } else {
+            onGround=false; coyoteTimer=COYOTE; velY=0; // ブロック等から降りる
+          }
+        } else {
+          // 移動中に穴に差しかかった → 落下開始（コヨーテタイム発動）
+          onGround=false; coyoteTimer=COYOTE;
+        }
+      }
+      // 重力（落下中はやや強く＝気持ちいい落下）
+      const g = velY<0 ? GRAVITY*1.25 : GRAVITY;
+      velY += g*dt;
+      player.position.y += velY*dt;
+
+      // パイプ側面衝突（着地より先に判定＝めり込む前に死亡）
+      // プレイヤーの左右端（px±PLAYER_HALF）が移動経路（prevX〜px）でパイプ範囲と重なるか判定。
+      // 移動経路全体をスイープ＝フレーム落ちでパイプを飛び越えても素通りしない。
+      for(const s of solids){
+        if(!s.deadly) continue;
+        // プレイヤーが占めるX区間（移動経路を含む最小〜最大＋半幅）
+        const pLeft  = Math.min(prevX,px) - PLAYER_HALF;
+        const pRight = Math.max(prevX,px) + PLAYER_HALF;
+        const sLeft  = s.x - s.halfW;
+        const sRight = s.x + s.halfW;
+        // X軸で重なっている（AABBの水平判定）
+        if(pLeft < sRight && pRight > sLeft){
+          // パイプの上に立っている／着地直前（接地中 or 足元が上面付近）なら側面衝突しない
+          const onPipeTop = (onGround || velY<=0) && player.position.y >= s.top - 0.35;
+          // 足元が上面より下（0.35以上下）＝パイプの側面にいる → 死亡
+          if(player.position.y < s.top-0.35 && !onPipeTop){
+            die('Bumped into a pipe…'); break;
+          }
+        }
+      }
+
+      // 着地判定（上から降りる＝パイプの上にも乗れる）
+      if(running && !onGround && velY<=0){
+        const onHole = groundGaps.some(g=> px>g[0] && px<g[1]);
+        const sup=supportAt(px, prevY);
+        // 穴でない場所で地面レベルまで落ちたら必ず着地
+        if(!onHole && player.position.y<=0.02){
+          player.position.y=0;
+          if(velY<-6){ setSquash(0.62); camShake=Math.min(0.3,-velY*0.012); }
+          velY=0; onGround=true; airJumps=2;
+        } else if(sup>-1e8 && player.position.y<=sup+0.02){
+          player.position.y=sup;
+          if(velY<-6){ setSquash(0.62); camShake=Math.min(0.3,-velY*0.012); }
+          velY=0; onGround=true; airJumps=2;
+        }
+      }
+
+      // スクワッシュの復元（スプリング的に1に戻る）
+      const cs=player.scale.y;
+      setSquash(cs + (1-cs)*Math.min(1, dt*14));
+
+      // クリボー移動・コイン回転
+      for(const o of items){
+        if(o.type==='goomba' && o.alive){
+          o.mesh.position.x += o.dir*2.0*dt;
+          if(o.mesh.position.x < o.x-3) o.dir=1;
+          if(o.mesh.position.x > o.x+3) o.dir=-1;
+        } else if(o.type==='coin' && o.alive){
+          o.mesh.rotation.y += dt*4;
+        }
+      }
+
+      if(running){ checkItems(); updateHUD(); }
+    }
+    updateDebris(dt);
+
+    // カメラ（横追従・少し先を見る・揺れ）
+    let shx=0, shy=0;
+    if(camShake>0.001){ shx=(Math.random()-0.5)*camShake; shy=(Math.random()-0.5)*camShake; camShake*=0.85; }
+    const tx=player.position.x+7, ty=4.2, tz=17;
+    camera.position.x += (tx-camera.position.x)*0.1;
+    camera.position.y += (ty-camera.position.y)*0.08;
+    camera.position.z += (tz-camera.position.z)*0.1;
+    camera.position.x+=shx; camera.position.y+=shy;
+    camera.lookAt(player.position.x+3, player.position.y+2, 0);
+
+    sun.position.set(player.position.x+20, 40, 30);
+    sun.target.position.set(player.position.x, 0, 0);
+    sun.target.updateMatrixWorld();
+
+    renderer.render(scene, camera);
+  }
+
+  window.addEventListener('resize', ()=>{
+    camera.aspect=window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ================= 初期化 =================
+  buildPlayer();
+  buildLevel();
+  camera.position.set(7,4.2,17);
+  updateHUD();
+  requestAnimationFrame(animate);
+})();
+
+// ===== PWA（1ファイル完結：manifestとService WorkerをBlobで生成） =====
+(function(){
+  const ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%235c94fc'/%3E%3Crect x='156' y='150' width='200' height='60' rx='18' fill='%23e52521'/%3E%3Crect x='176' y='210' width='160' height='150' rx='20' fill='%23e52521'/%3E%3Crect x='196' y='250' width='120' height='70' rx='14' fill='%23ffcf9e'/%3E%3Crect x='216' y='270' width='24' height='24' rx='6' fill='%231a1a2e'/%3E%3Crect x='272' y='270' width='24' height='24' rx='6' fill='%231a1a2e'/%3E%3C/svg%3E";
+  const manifest = {
+    name:"Sky Run 1-1", short_name:"Sky Run",
+    description:"Mario 1-1 style horizontal-scrolling 3D jump action",
+    start_url:".", scope:".", display:"standalone", orientation:"portrait",
+    background_color:"#5c94fc", theme_color:"#5c94fc",
+    icons:[{src:ICON,sizes:"512x512",type:"image/svg+xml",purpose:"any maskable"}]
+  };
+  const mBlob = new Blob([JSON.stringify(manifest)], {type:'application/manifest+json'});
+  const mUrl = URL.createObjectURL(mBlob);
+  const link = document.createElement('link');
+  link.rel='manifest'; link.href=mUrl;
+  document.head.appendChild(link);
+
+  const swCode = `
+    const CACHE='sky-run-v1';
+    self.addEventListener('install',e=>self.skipWaiting());
+    self.addEventListener('activate',e=>self.clients.claim());
+    self.addEventListener('fetch',e=>{
+      e.respondWith(
+        caches.match(e.request).then(r=>r||fetch(e.request).then(resp=>{
+          const c=resp.clone(); caches.open(CACHE).then(ca=>ca.put(e.request,c)).catch(()=>{}); return resp;
+        }).catch(()=>caches.match('./')))
+      );
+    });
+  `;
+  if('serviceWorker' in navigator){
+    const swBlob = new Blob([swCode], {type:'text/javascript'});
+    const swUrl = URL.createObjectURL(swBlob);
+    window.addEventListener('load', ()=>{
+      navigator.serviceWorker.register(swUrl, {scope:'./'}).catch(()=>{});
+    });
+  }
+})();
+</script>
+</body>
+</html>
